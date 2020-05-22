@@ -19,6 +19,7 @@ position. If no /initialpose is set at startup, a random spawnpoint is used.
 import json
 import math
 import os
+import sys
 import random
 from abc import abstractmethod
 
