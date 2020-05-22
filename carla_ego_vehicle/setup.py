@@ -2,7 +2,7 @@
 Setup for carla_ego_vehicle
 """
 import os
-ROS_VERSION = int(os.environ['ROS_VERSION'])
+ROS_VERSION = int(os.environ.get('ROS_VERSION', 0))
 
 if ROS_VERSION == 1:
     from distutils.core import setup
