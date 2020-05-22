@@ -41,9 +41,8 @@ RUN echo "source /carla_ws/devel/setup.bash" >> ~/.bashrc
 SHELL ["/bin/bash", "-c" , "-l"]
 
 RUN sudo apt-get update && sudo apt-get install ros-eloquent-ros-environment
-RUN rosdep install --from-paths src/carla_msgs src/ros_compatibility -r -y
-RUN colcon info carla_msgs
+RUN rosdep install --from-paths src/carla_msgs src/ros_compatibility src/carla_ego_vehicle -r -y
 # .bashrc does not seem to do the source
-RUN source /opt/ros/$ROS_VERSION/setup.bash && colcon build --packages-select carla_msgs ros_compatibility
+RUN source /opt/ros/$ROS_VERSION/setup.bash && colcon build --packages-select carla_msgs ros_compatibility carla_ego_vehicle
 
 CMD ["ros2", "run", "carla_ros_bridge" , "carla_ros_bridge.py"]
