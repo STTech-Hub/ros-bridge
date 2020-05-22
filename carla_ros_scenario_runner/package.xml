@@ -13,6 +13,8 @@
   <exec_depend>carla_msgs</exec_depend>
   <exec_depend>carla_ros_scenario_runner_types</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python-pexpect</exec_depend>
+  <!-- <exec_depend>python-networkx</exec_depend> networkx==2.2 -->
 
   <export>
   </export>
