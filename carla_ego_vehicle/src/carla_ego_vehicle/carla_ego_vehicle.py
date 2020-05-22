@@ -76,7 +76,7 @@ class CarlaEgoVehicle(CompatibleNode):
         self.timeout = self.get_param('/carla/timeout', 2)
 
         if ROS_VERSION == 1:
-            self.host = self.get_param('/carla/host', '127.0.0.1')
+            self.host = self.get_param('/carla/host', 'localhost')
             self.port = self.get_param('/carla/port', '2000')
             self.sensor_definition_file = self.get_param('~sensor_definition_file', 'sensors.json')
             self.actor_filter = self.get_param('~vehicle_filter', 'vehicle.*')
