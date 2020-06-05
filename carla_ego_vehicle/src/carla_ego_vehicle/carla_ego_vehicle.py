@@ -19,6 +19,7 @@ position. If no /initialpose is set at startup, a random spawnpoint is used.
 import json
 import math
 import os
+import sys
 import random
 from abc import abstractmethod
 
@@ -31,7 +32,6 @@ if ROS_VERSION == 1:
 
 
 elif ROS_VERSION == 2:
-    import sys
     import os
     print(os.getcwd())
     # TODO: fix setup.py to easily import CompatibleNode (as in ROS1)

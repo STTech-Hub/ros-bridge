@@ -42,7 +42,7 @@ if ROS_VERSION == 1:
     from tf import ConnectivityException
     from tf import ExtrapolationException
     import tf
-    from ros_compatibility import CompatibleNode, QoSProfile
+    from ros_compatibility import *
 
     latch_on = True
 
@@ -65,7 +65,7 @@ elif ROS_VERSION == 2:
     import sys
     sys.path.append(os.getcwd() +
                     '/install/ros_compatibility/lib/python3.6/site-packages/src/ros_compatibility')
-    from ros_compatible_node import CompatibleNode
+    from ros_compatible_node import *
 
     latch_on = QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
 
