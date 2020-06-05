@@ -10,11 +10,30 @@ Base Class to handle Pseudo Actors (that are not existing in Carla world)
 """
 
 from std_msgs.msg import Header
-import rospy
+import os
+ROS_VERSION = int(os.environ.get('ROS_VERSION', 0))
+if ROS_VERSION == 1:
+    import rospy
+    from ros_compatibility import *
+elif ROS_VERSION == 2:
+    import rclpy
+    from rclpy.qos import QoSDurabilityPolicy
+    from rclpy.qos import QoSProfile
+    import sys
+    print(os.getcwd())
+    # TODO: fix setup.py to easily import CompatibleNode (as in ROS1)
+    sys.path.append(os.getcwd() +
+                    '/install/ros_compatibility/lib/python3.6/site-packages/src/ros_compatibility')
+    from rclpy.node import Node
+    from rclpy import executors
+    from rclpy.time import Time
+    from ament_index_python.packages import get_package_share_directory
+    from ros_compatible_node import CompatibleNode
+else:
+    raise NotImplementedError("Make sure you have a valid ROS_VERSION env variable set.")
 
 
-class PseudoActor(object):
-
+class PseudoActor(CompatibleNode):
     """
     Generic base class for Pseudo actors (that are not existing in Carla world)
     """
@@ -29,6 +48,9 @@ class PseudoActor(object):
         :param communication: communication-handle
         :type communication: carla_ros_bridge.communication
         """
+
+        # super(PseudoActor, self).__init__("pseudo_actor_node")
+
         self.parent = parent
         if self.parent:
             self.parent_id = parent.get_id()
@@ -72,7 +94,21 @@ class PseudoActor(object):
         else:
             header.frame_id = self.get_prefix()
         if timestamp:
-            header.stamp = rospy.Time.from_sec(timestamp)
+            if ROS_VERSION == 1:
+                header.stamp = rospy.Time.from_sec(timestamp)
+            elif ROS_VERSION == 2:
+
+                def ros_timestamp(sec=0):
+                    from builtin_interfaces.msg import Time
+                    time = Time()
+                    time.sec = int(sec)
+                    time.nanosec = int((sec - int(sec)) * 1000000000)
+                    return time
+
+                header.stamp = ros_timestamp(timestamp)
+            else:
+                raise NotImplementedError(
+                    "Make sure you have a valid ROS_VERSION env variable set.")
         else:
             header.stamp = self.communication.get_current_ros_time()
         return header

@@ -9,14 +9,36 @@
 """
 Handle communication of ROS topics
 """
-import rospy
+import os
+ROS_VERSION = int(os.environ.get('ROS_VERSION', 0))
+
+if ROS_VERSION == 1:
+    import rospy
+    from ros_compatibility import *
+    latch = True
+elif ROS_VERSION == 2:
+    import rclpy
+    from rclpy.qos import QoSDurabilityPolicy
+    from rclpy.qos import QoSProfile
+    import sys
+    print(os.getcwd())
+    # TODO: fix setup.py to easily import CompatibleNode (as in ROS1)
+    sys.path.append(os.getcwd() +
+                    '/install/ros_compatibility/lib/python3.6/site-packages/src/ros_compatibility')
+    import rclpy
+    from rclpy.node import Node
+    from rclpy import executors
+    from ament_index_python.packages import get_package_share_directory
+    from ros_compatible_node import CompatibleNode, ros_timestamp
+    latch = QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
+else:
+    raise NotImplementedError("Make sure you have a valid ROS_VERSION env variable set.")
 
 from rosgraph_msgs.msg import Clock
 from tf2_msgs.msg import TFMessage
 
 
-class Communication(object):
-
+class Communication(CompatibleNode):
     """
     Handle communication of ROS topics
     """
@@ -25,17 +47,16 @@ class Communication(object):
         """
         Constructor
         """
+        super(Communication, self).__init__("communication", rospy_init=False)
         self.tf_to_publish = []
         self.msgs_to_publish = []
-        self.publishers = {}
+        self.pub = {}
         self.subscribers = {}
-        self.ros_timestamp = rospy.Time()
+        self.ros_timestamp = ros_timestamp()
 
         # needed?
-        self.publishers['clock'] = rospy.Publisher(
-            'clock', Clock, queue_size=10)
-        self.publishers['tf'] = rospy.Publisher(
-            'tf', TFMessage, queue_size=100)
+        # self.pub['clock'] = self.new_publisher(Clock, 'clock')
+        # self.pub['tf'] = self.new_publisher(TFMessage, 'tf', qos_profile=QoSProfile(depth=100))
 
     def send_msgs(self):
         """
@@ -44,21 +65,17 @@ class Communication(object):
         :return:
         """
         # prepare tf message
-        tf_msg = TFMessage(self.tf_to_publish)
-        try:
-            self.publishers['tf'].publish(tf_msg)
-        except rospy.ROSSerializationException as error:
-            rospy.logwarn("Failed to serialize message on publishing: {}".format(error))
-        except Exception as error:  # pylint: disable=broad-except
-            rospy.logwarn("Failed to publish message: {}".format(error))
+        # tf_msg = TFMessage(self.tf_to_publish)
+        # try:
+        #     self.pub['tf'].publish(tf_msg)
+        # except Exception as error:  # pylint: disable=broad-except
+        #     self.logwarn("Failed to publish message: {}".format(error))
 
         for publisher, msg in self.msgs_to_publish:
             try:
                 publisher.publish(msg)
-            except rospy.ROSSerializationException as error:  # pylint: disable=broad-except
-                rospy.logwarn("Failed to serialize message on publishing: {}".format(error))
             except Exception as error:  # pylint: disable=broad-except
-                rospy.logwarn("Failed to publish message: {}".format(error))
+                self.logwarn("Failed to publish message: {}".format(error))
         self.msgs_to_publish = []
         self.tf_to_publish = []
 
@@ -83,10 +100,14 @@ class Communication(object):
             # transform are merged in same message
             self.tf_to_publish.append(msg)
         else:
-            if topic not in self.publishers:
-                self.publishers[topic] = rospy.Publisher(
-                    topic, type(msg), queue_size=10, latch=is_latched)
-            self.msgs_to_publish.append((self.publishers[topic], msg))
+            if topic not in self.pub:
+                if is_latched:
+                    qos_profile = QoSProfile(depth=10, durability=latch)
+                    self.pub[topic] = self.new_publisher(type(msg), topic, qos_profile=qos_profile)
+                else:
+                    # Use default QoS profile.
+                    self.pub[topic] = self.new_publisher(type(msg), topic)
+            self.msgs_to_publish.append((self.pub[topic], msg))
 
     def update_clock(self, carla_timestamp):
         """
@@ -96,9 +117,9 @@ class Communication(object):
         :type carla_timestamp: carla.Timestamp
         :return:
         """
-        self.ros_timestamp = rospy.Time.from_sec(
-            carla_timestamp.elapsed_seconds)
-        self.publish_message('clock', Clock(self.ros_timestamp))
+        # self.ros_timestamp = ros_timestamp(carla_timestamp.elapsed_seconds, from_secs=True)
+        # self.publish_message('clock', Clock(self.ros_timestamp))
+        pass
 
     def get_current_ros_time(self):
         """
