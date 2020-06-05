@@ -177,14 +177,9 @@ class World(CompatibleNode):
         """
         destroy all objects
         """
-        if ROS_VERSION == 1:
-            self.image_subscriber.unregister()
-            self.collision_subscriber.unregister()
-            self.lane_invasion_subscriber.unregister()
-        elif ROS_VERSION == 2:
-            self.image_subscriber.destroy()
-            self.collision_subscriber.destroy()
-            self.lane_invasion_subscriber.destroy()
+        destroy_subscription(self.image_subscriber)
+        destroy_subscription(self.collision_subscriber)
+        destroy_subscription(self.lane_invasion_subscriber)
 
 
 # ==============================================================================
@@ -238,14 +233,9 @@ class KeyboardControl(CompatibleNode):
             self.vehicle_control_manual_override)  # disable manual override
 
     def __del__(self):
-        if ROS_VERSION == 1:
-            self.auto_pilot_enable_publisher.unregister()
-            self.vehicle_control_publisher.unregister()
-            self.vehicle_control_manual_override_publisher.unregister()
-        elif ROS_VERSION == 2:
-            self.auto_pilot_enable_publisher.destroy()
-            self.vehicle_control_publisher.destroy()
-            self.vehicle_control_manual_override_publisher.destroy()
+        destroy_subscription(self.auto_pilot_enable_publisher)
+        destroy_subscription(self.vehicle_control_publisher)
+        destroy_subscription(self.vehicle_control_manual_override_publisher)
 
     def set_vehicle_control_manual_override(self, enable):
         """
@@ -405,15 +395,11 @@ class HUD(CompatibleNode):
                                                            self.clock_status_updated)
 
     def __del__(self):
-        if ROS_VERSION == 1:
-            self.gnss_subscriber.unregister()
-            self.vehicle_status_subscriber.unregister()
-            self.vehicle_info_subscriber.unregister()
-        elif ROS_VERSION == 2:
-            self.gnss_subscriber.destroy()
-            self.vehicle_status_subscriber.destroy()
-            self.vehicle_info_subscriber.destroy()
-            self.clock_subscriber.destroy()
+        destroy_subscription(self.gnss_subscriber)
+        destroy_subscription(self.vehicle_status_subscriber)
+        destroy_subscription(self.vehicle_info_subscriber)
+        if ROS_VERSION == 2:
+            destroy_subscription(self.clock_subscriber)
 
     def tick(self, clock):
         """
