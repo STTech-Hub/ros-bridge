@@ -28,7 +28,7 @@ if ROS_VERSION == 1:
             self.latch = bool(durability)
 
     class CompatibleNode(object):
-        def __init__(self, node_name, queue_size=10, latch=False, rospy_init=True):
+        def __init__(self, node_name, queue_size=10, latch=False, rospy_init=True, **kwargs):
             if rospy_init:
                 rospy.init_node(node_name, anonymous=True)
             self.qos_profile = QoSProfile(depth=queue_size, durability=latch)
@@ -44,12 +44,6 @@ if ROS_VERSION == 1:
 
         def loginfo(self, text):
             rospy.loginfo(text)
-
-        def logwarn(self, text):
-            rospy.logwarn(text)
-
-        def logwarn(self, text):
-            rospy.logwarn(text)
 
         def logwarn(self, text):
             rospy.logwarn(text)
@@ -76,8 +70,7 @@ if ROS_VERSION == 1:
                               callback_group=None):
             if qos_profile is None:
                 qos_profile = self.qos_profile
-            return rospy.Subscriber(topic, msg_type,
-                                    callback, queue_size=qos_profile.depth)
+            return rospy.Subscriber(topic, msg_type, callback, queue_size=qos_profile.depth)
 
         def spin(self, executor=None):
             rospy.spin()
@@ -98,7 +91,7 @@ elif ROS_VERSION == 2:
         time = Time()
         if from_sec:
             time.sec = int(sec)
-            time.nanosec = int((sec - int(sec)) * 1000_000_000)
+            time.nanosec = int((sec - int(sec)) * 1000000000)
         else:
             time.sec = int(sec)
             time.nanosec = int(nsec)
@@ -115,9 +108,9 @@ elif ROS_VERSION == 2:
 
 
     class CompatibleNode(Node):
-        def __init__(self, node_name, queue_size=10, latch=False, rospy_init=True):
+        def __init__(self, node_name, queue_size=10, latch=False, rospy_init=True, **kwargs):
             super().__init__(node_name, allow_undeclared_parameters=True,
-                             automatically_declare_parameters_from_overrides=True)
+                             automatically_declare_parameters_from_overrides=True, **kwargs)
             if latch:
                 self.qos_profile = QoSProfile(
                     depth=queue_size,
@@ -147,23 +140,8 @@ elif ROS_VERSION == 2:
         def logerr(self, text):
             self.get_logger().error(text)
 
-        def logwarn(self, text):
-            self.get_logger().warn(text)
-
-        def logwarn(self, text):
-            self.get_logger().warn(text)
-
         def logfatal(self, text):
             self.get_logger().fatal(text)
-
-        def new_publisher(self, msg_type, topic,
-                            qos_profile=None, callback_group=None):
-            if qos_profile is None:
-                qos_profile = self.qos_profile
-            if callback_group is None:
-                callback_group = self.callback_group
-            return self.create_publisher(msg_type, topic,
-                                         qos_profile, callback_group=callback_group)
 
         def new_publisher(self, msg_type, topic,
                             qos_profile=None, callback_group=None):
@@ -200,8 +178,8 @@ elif ROS_VERSION == 2:
             rclpy.shutdown()
 
 else:
-    raise NotImplementedError('Make sure you have valid ' +
-                              'ROS_VERSION env variable')
+    raise NotImplementedError('Make sure you have valid ROS_VERSION env variable.')
+
 
 
 def main():
