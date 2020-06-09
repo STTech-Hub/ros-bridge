@@ -48,12 +48,6 @@ if ROS_VERSION == 1:
         def logwarn(self, text):
             rospy.logwarn(text)
 
-        def logwarn(self, text):
-            rospy.logwarn(text)
-
-        def logwarn(self, text):
-            rospy.logwarn(text)
-
         def logerr(self, text):
             rospy.logerr(text)
 
@@ -146,23 +140,8 @@ elif ROS_VERSION == 2:
         def logerr(self, text):
             self.get_logger().error(text)
 
-        def logwarn(self, text):
-            self.get_logger().warn(text)
-
-        def logwarn(self, text):
-            self.get_logger().warn(text)
-
         def logfatal(self, text):
             self.get_logger().fatal(text)
-
-        def new_publisher(self, msg_type, topic,
-                            qos_profile=None, callback_group=None):
-            if qos_profile is None:
-                qos_profile = self.qos_profile
-            if callback_group is None:
-                callback_group = self.callback_group
-            return self.create_publisher(msg_type, topic,
-                                         qos_profile, callback_group=callback_group)
 
         def new_publisher(self, msg_type, topic,
                             qos_profile=None, callback_group=None):
