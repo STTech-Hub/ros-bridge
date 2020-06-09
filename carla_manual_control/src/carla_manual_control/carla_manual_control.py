@@ -34,6 +34,8 @@ import numpy
 
 ROS_VERSION = int(os.environ['ROS_VERSION'])
 
+latch_on = None
+
 if ROS_VERSION == 1:
     import rospy
     from tf import LookupException
@@ -41,6 +43,8 @@ if ROS_VERSION == 1:
     from tf import ExtrapolationException
     import tf
     from ros_compatibility import CompatibleNode, QoSProfile
+
+    latch_on = True
 
 elif ROS_VERSION == 2:
     # TODO: Optimise ros2 imports
@@ -54,13 +58,16 @@ elif ROS_VERSION == 2:
     from tf2_ros import ConnectivityException
     from tf2_ros import ExtrapolationException
     import tf2_ros
-    from rclpy.qos import QoSProfile
+    from rclpy.qos import QoSProfile, QoSDurabilityPolicy
     from threading import Thread, Lock, Event
-    # from builtin_interfaces.msg import Time
+    from builtin_interfaces.msg import Time
     from rosgraph_msgs.msg import Clock
-
-    sys.path.append(os.getcwd() + '/install/ros_compatibility/lib/python3.6/site-packages/src/ros_compatibility')
+    import sys
+    sys.path.append(os.getcwd() +
+                    '/install/ros_compatibility/lib/python3.6/site-packages/src/ros_compatibility')
     from ros_compatible_node import CompatibleNode
+
+    latch_on = QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
 
 from std_msgs.msg import Bool
 from sensor_msgs.msg import NavSatFix
@@ -98,7 +105,6 @@ try:
 except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
-
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
 # ==============================================================================
@@ -115,29 +121,31 @@ class World(CompatibleNode):
         self.hud = hud
         self.role_name = role_name
 
-        if ROS_VERSION == 2:
+        if ROS_VERSION == 1:
+            self.callback_group = None
+        elif ROS_VERSION == 2:
             self.callback_group = ReentrantCallbackGroup()
 
-        self.image_subscriber = self.create_subscriber(Image,
-                                                       "/carla/{}/camera/rgb/view/image_color".format(self.role_name),
-                                                       self.on_view_image)
+        self.image_subscriber = self.create_subscriber(
+            Image, "/carla/{}/camera/rgb/view/image_color".format(self.role_name),
+            self.on_view_image, callback_group=self.callback_group)
 
-        self.collision_subscriber = self.create_subscriber(CarlaCollisionEvent,
-                                                           "/carla/{}/collision".format(self.role_name),
-                                                           self.on_collision)
+        self.collision_subscriber = self.create_subscriber(
+            CarlaCollisionEvent, "/carla/{}/collision".format(self.role_name),
+            self.on_collision, callback_group=self.callback_group)
 
-        self.lane_invasion_subscriber = self.create_subscriber(CarlaLaneInvasionEvent,
-                                                               "/carla/{}/lane_invasion".format(self.role_name),
-                                                               self.on_lane_invasion)
+        self.lane_invasion_subscriber = self.create_subscriber(
+            CarlaLaneInvasionEvent, "/carla/{}/lane_invasion".format(self.role_name),
+            self.on_lane_invasion, callback_group=self.callback_group)
 
     def on_collision(self, data):
         """
         Callback on collision event
         """
-        intensity = math.sqrt(data.normal_impulse.x ** 2 +
-                              data.normal_impulse.y ** 2 + data.normal_impulse.z ** 2)
-        self.hud.notification('Collision with {} (impulse {})'.format(
-            data.other_actor_id, intensity))
+        intensity = math.sqrt(data.normal_impulse.x**2 + data.normal_impulse.y**2 +
+                              data.normal_impulse.z**2)
+        self.hud.notification('Collision with {} (impulse {})'.format(data.other_actor_id,
+                                                                      intensity))
 
     def on_lane_invasion(self, data):
         """
@@ -186,6 +194,7 @@ class World(CompatibleNode):
 # -- KeyboardControl -----------------------------------------------------------
 # ==============================================================================
 
+
 class KeyboardControl(CompatibleNode):
     """
     Handle input events
@@ -200,32 +209,34 @@ class KeyboardControl(CompatibleNode):
         self._control = CarlaEgoVehicleControl()
         self._steer_cache = 0.0
 
-        if ROS_VERSION == 2:
+        if ROS_VERSION == 1:
+            self.callback_group = None
+        elif ROS_VERSION == 2:
             self.callback_group = ReentrantCallbackGroup()
 
-        fast_qos = QoSProfile(depth=1)
-        fast_latched_qos = QoSProfile(depth=1, durability=latch_on)  # imported from ros_compat.
+        fast_qos = QoSProfile(depth=10)
+        fast_latched_qos = QoSProfile(depth=10)  # imported from ros_compat.
 
         self.vehicle_control_manual_override_publisher = \
             self.new_publisher(Bool,
                                "/carla/{}/vehicle_control_manual_override".format(self.role_name),
-                               qos_profile=fast_latched_qos)
+                               qos_profile=fast_latched_qos, callback_group=self.callback_group)
 
         self.vehicle_control_manual_override = False
 
         self.auto_pilot_enable_publisher = \
             self.new_publisher(Bool,
                                "/carla/{}/enable_autopilot".format(self.role_name),
-                               qos_profile=fast_qos)
+                               qos_profile=fast_qos, callback_group=self.callback_group)
 
         self.vehicle_control_publisher = \
             self.new_publisher(CarlaEgoVehicleControl,
                                "/carla/{}/vehicle_control_cmd_manual".format(self.role_name),
-                               qos_profile=fast_qos)
+                               qos_profile=fast_qos, callback_group=self.callback_group)
 
-        self.carla_status_subscriber = self.create_subscriber(CarlaStatus,
-                                                              "/carla/status",
-                                                              self._on_new_carla_frame)
+        self.carla_status_subscriber = self.create_subscriber(CarlaStatus, "/carla/status",
+                                                              self._on_new_carla_frame,
+                                                              callback_group=self.callback_group)
 
         self.set_autopilot(self._autopilot_enabled)
 
@@ -273,8 +284,9 @@ class KeyboardControl(CompatibleNode):
                     self._control.gear = 1 if self._control.reverse else -1
                 elif event.key == K_m:
                     self._control.manual_gear_shift = not self._control.manual_gear_shift
-                    self.hud.notification('%s Transmission' % (
-                        'Manual' if self._control.manual_gear_shift else 'Automatic'))
+                    self.hud.notification(
+                        '%s Transmission' %
+                        ('Manual' if self._control.manual_gear_shift else 'Automatic'))
                 elif self._control.manual_gear_shift and event.key == K_COMMA:
                     self._control.gear = max(-1, self._control.gear - 1)
                 elif self._control.manual_gear_shift and event.key == K_PERIOD:
@@ -282,8 +294,8 @@ class KeyboardControl(CompatibleNode):
                 elif event.key == K_p:
                     self._autopilot_enabled = not self._autopilot_enabled
                     self.set_autopilot(self._autopilot_enabled)
-                    self.hud.notification('Autopilot %s' % (
-                        'On' if self._autopilot_enabled else 'Off'))
+                    self.hud.notification('Autopilot %s' %
+                                          ('On' if self._autopilot_enabled else 'Off'))
         if not self._autopilot_enabled and self.vehicle_control_manual_override:
             self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
             self._control.reverse = self._control.gear < 0
@@ -316,7 +328,7 @@ class KeyboardControl(CompatibleNode):
         self._steer_cache = min(0.7, max(-0.7, self._steer_cache))
         self._control.steer = round(self._steer_cache, 1)
         self._control.brake = 1.0 if keys[K_DOWN] or keys[K_s] else 0.0
-        self._control.hand_brake = keys[K_SPACE]
+        self._control.hand_brake = bool(keys[K_SPACE])
 
     @staticmethod
     def _is_quit_shortcut(key):
@@ -351,6 +363,7 @@ class HUD(CompatibleNode):
 
         if ROS_VERSION == 1:
             self.tf_listener = tf.TransformListener()
+            self.callback_group = None
         elif ROS_VERSION == 2:
             self.tf_listener_node = rclpy.create_node("tf_listener")
             self.tfBuffer = tf2_ros.Buffer()
@@ -358,41 +371,40 @@ class HUD(CompatibleNode):
             self.time = Time()
             self.callback_group = ReentrantCallbackGroup()
 
-        self.vehicle_status_subscriber = self.create_subscriber(CarlaEgoVehicleStatus,
-                                                                "/carla/{}/vehicle_status".format(self.role_name),
-                                                                self.vehicle_status_updated)
+        self.vehicle_status_subscriber = self.create_subscriber(
+            CarlaEgoVehicleStatus, "/carla/{}/vehicle_status".format(self.role_name),
+            self.vehicle_status_updated, callback_group=self.callback_group)
 
-        self.vehicle_status_subscriber = self.create_subscriber(CarlaEgoVehicleStatus,
-                                                                "/carla/{}/vehicle_status".format(self.role_name),
-                                                                self.vehicle_status_updated)
+        self.vehicle_status_subscriber = self.create_subscriber(
+            CarlaEgoVehicleStatus, "/carla/{}/vehicle_status".format(self.role_name),
+            self.vehicle_status_updated, callback_group=self.callback_group)
 
         self.vehicle_info = CarlaEgoVehicleInfo()
-        self.vehicle_info_subscriber = self.create_subscriber(CarlaEgoVehicleInfo,
-                                                              "/carla/{}/vehicle_info".format(self.role_name),
-                                                              self.vehicle_info_updated)
+        self.vehicle_info_subscriber = self.create_subscriber(
+            CarlaEgoVehicleInfo, "/carla/{}/vehicle_info".format(self.role_name),
+            self.vehicle_info_updated, callback_group=self.callback_group)
 
         self.latitude = 0
         self.longitude = 0
         self.manual_control = False
 
-        self.gnss_subscriber = self.create_subscriber(NavSatFix,
-                                                      "/carla/{}/gnss/gnss1/fix".format(self.role_name),
-                                                      self.gnss_updated)
+        self.gnss_subscriber = self.create_subscriber(
+            NavSatFix, "/carla/{}/gnss/gnss1/fix".format(self.role_name), self.gnss_updated,
+                                                        callback_group=self.callback_group)
 
-        self.manual_control_subscriber = self.create_subscriber(Bool,
-                                                                "/carla/{}/vehicle_control_manual_override".format(
-                                                                    self.role_name),
-                                                                self.manual_control_override_updated)
+        self.manual_control_subscriber = self.create_subscriber(
+            Bool, "/carla/{}/vehicle_control_manual_override".format(self.role_name),
+            self.manual_control_override_updated, callback_group=self.callback_group)
 
         self.carla_status = CarlaStatus()
         self.start_frame = None
-        self.status_subscriber = self.create_subscriber(CarlaStatus,
-                                                        "/carla/status",
-                                                        self.carla_status_updated)
+        self.status_subscriber = self.create_subscriber(CarlaStatus, "/carla/status",
+                                                        self.carla_status_updated,
+                                                        callback_group=self.callback_group)
         if ROS_VERSION == 2:
-            self.clock_subscriber = self.create_subscriber(Clock,
-                                                           "/clock",
-                                                           self.clock_status_updated)
+            self.clock_subscriber = self.create_subscriber(Time, "/clock",
+                                                           self.clock_status_updated,
+                                                           callback_group=self.callback_group)
 
     def __del__(self):
         destroy_subscription(self.gnss_subscriber)
@@ -407,8 +419,8 @@ class HUD(CompatibleNode):
         """
         self._notifications.tick(clock)
 
-    def clock_status_updated(self, clock):
-        self.time = clock.get_time()
+    def clock_status_updated(self, clock_time):
+        self.time = clock_time
 
     def carla_status_updated(self, data):
         """
@@ -447,6 +459,24 @@ class HUD(CompatibleNode):
         self.latitude = data.latitude
         self.longitude = data.longitude
         self.update_info_text()
+    
+    @staticmethod
+    def quaternion_to_euler(x, y, z, w):
+
+        import math
+        t0 = +2.0 * (w * x + y * z)
+        t1 = +1.0 - 2.0 * (x * x + y * y)
+        X = math.degrees(math.atan2(t0, t1))
+
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        Y = math.degrees(math.asin(t2))
+
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        Z = math.degrees(math.atan2(t3, t4))
+        return X, Y, Z
 
     def update_info_text(self):
         """
@@ -456,8 +486,9 @@ class HUD(CompatibleNode):
             return
         try:
             if ROS_VERSION == 1:
-                (position, quaternion) = self.tf_listener.lookupTransform(
-                    '/map', self.role_name, rospy.Time())
+                (position,
+                 quaternion) = self.tf_listener.lookupTransform('/map', self.role_name,
+                                                                rospy.Time())
                 _, _, yaw = tf.transformations.euler_from_quaternion(quaternion)
                 yaw = -math.degrees(yaw)
                 x = position[0]
@@ -468,7 +499,7 @@ class HUD(CompatibleNode):
                 q = self.tfBuffer.lookup_transform('map', self.role_name, when)
                 quaternion = q.transform.rotation
                 position = q.transform.translation
-                _, __, yaw = euler_from_quaternion(quaternion)
+                _, __, yaw = self.quaternion_to_euler(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
                 yaw = -math.degrees(yaw)
                 x = position.x
                 y = -position.y
@@ -487,23 +518,22 @@ class HUD(CompatibleNode):
         if ROS_VERSION == 1:
             time = int(rospy.get_rostime().to_sec())
         elif ROS_VERSION == 2:
-            time = float((self.carla_status.frame - self.start_frame) * self.carla_status.fixed_delta_seconds)
+            time = float((self.carla_status.frame - self.start_frame) *
+                         self.carla_status.fixed_delta_seconds)
 
         if self.carla_status.fixed_delta_seconds:
             fps = 1 / self.carla_status.fixed_delta_seconds
         self._info_text = [
             'Frame: % 22s' % self.carla_status.frame,
-            'Simulation time: % 12s' % datetime.timedelta(
-                seconds=time),
-            'FPS: % 24.1f' % fps,
-            '',
+            'Simulation time: % 12s' % datetime.timedelta(seconds=time),
+            'FPS: % 24.1f' % fps, '',
             'Vehicle: % 20s' % ' '.join(self.vehicle_info.type.title().split('.')[1:]),
             'Speed:   % 15.0f km/h' % (3.6 * self.vehicle_status.velocity),
             u'Heading:% 16.0f\N{DEGREE SIGN} % 2s' % (yaw, heading),
             'Location:% 20s' % ('(% 5.1f, % 5.1f)' % (x, y)),
             'GNSS:% 24s' % ('(% 2.6f, % 3.6f)' % (self.latitude, self.longitude)),
-            'Height:  % 18.0f m' % z,
-            '']
+            'Height:  % 18.0f m' % z, ''
+        ]
         self._info_text += [
             ('Throttle:', self.vehicle_status.control.throttle, 0.0, 1.0),
             ('Steer:', self.vehicle_status.control.steer, -1.0, 1.0),
@@ -511,9 +541,11 @@ class HUD(CompatibleNode):
             ('Reverse:', self.vehicle_status.control.reverse),
             ('Hand brake:', self.vehicle_status.control.hand_brake),
             ('Manual:', self.vehicle_status.control.manual_gear_shift),
-            'Gear:        %s' % {-1: 'R', 0: 'N'}.get(self.vehicle_status.control.gear,
-                                                      self.vehicle_status.control.gear),
-            '']
+            'Gear:        %s' % {
+                -1: 'R',
+                0: 'N'
+            }.get(self.vehicle_status.control.gear, self.vehicle_status.control.gear), ''
+        ]
         self._info_text += [('Manual ctrl:', self.manual_control)]
         if self.carla_status.synchronous_mode:
             self._info_text += [('Sync mode running:', self.carla_status.synchronous_mode_running)]
@@ -553,8 +585,8 @@ class HUD(CompatibleNode):
                     break
                 if isinstance(item, list):
                     if len(item) > 1:
-                        points = [(x + 8, v_offset + 8 + (1.0 - y) * 30)
-                                  for x, y in enumerate(item)]
+                        points = [(x + 8, v_offset + 8 + (1.0 - y) * 30) for x, y in enumerate(item)
+                                 ]
                         pygame.draw.lines(display, (255, 136, 0), False, points, 2)
                     item = None
                     v_offset += 18
@@ -567,8 +599,8 @@ class HUD(CompatibleNode):
                         pygame.draw.rect(display, (255, 255, 255), rect_border, 1)
                         f = (item[1] - item[2]) / (item[3] - item[2])
                         if item[2] < 0.0:
-                            rect = pygame.Rect(
-                                (bar_h_offset + f * (bar_width - 6), v_offset + 8), (6, 6))
+                            rect = pygame.Rect((bar_h_offset + f * (bar_width - 6), v_offset + 8),
+                                               (6, 6))
                         else:
                             f = 0.0
                             rect = pygame.Rect((bar_h_offset, v_offset + 8), (f * bar_width, 6))
@@ -692,9 +724,8 @@ def main(args=None):
     pygame.display.set_caption("CARLA ROS manual control")
     world = None
     try:
-        display = pygame.display.set_mode(
-            (resolution['width'], resolution['height']),
-            pygame.HWSURFACE | pygame.DOUBLEBUF)
+        display = pygame.display.set_mode((resolution['width'], resolution['height']),
+                                          pygame.HWSURFACE | pygame.DOUBLEBUF)
 
         hud = HUD(role_name, resolution['width'], resolution['height'])
         world = World(role_name, hud)
@@ -704,9 +735,9 @@ def main(args=None):
         if ROS_VERSION == 2:
             executer = rclpy.executors.MultiThreadedExecutor(num_threads=12)
             executer.add_node(hud.tf_listener_node)
-            executer.add_node(hud.node)
-            executer.add_node(world.node)
-            executer.add_node(controller.node)
+            executer.add_node(hud)
+            executer.add_node(world)
+            executer.add_node(controller)
             thread = Thread(target=run, args=(executer,))
             thread.start()
 
